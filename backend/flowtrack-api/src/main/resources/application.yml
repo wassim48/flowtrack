@@ -1,0 +1,27 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: flowtrack-api
+  datasource:
+    url: jdbc:postgresql://localhost:5432/flowtrack
+    username: flowtrack
+    password: ${POSTGRES_PASSWORD:flowtrack}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8081/realms/flowtrack
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
