@@ -19,6 +19,14 @@ import java.util.List;
 @EnableMethodSecurity
 public class SecurityConfig {
 
+    private final JsonAuthenticationEntryPoint entryPoint;
+    private final JsonAccessDeniedHandler accessDeniedHandler;
+
+    public SecurityConfig(JsonAuthenticationEntryPoint entryPoint, JsonAccessDeniedHandler accessDeniedHandler) {
+        this.entryPoint = entryPoint;
+        this.accessDeniedHandler = accessDeniedHandler;
+    }
+
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
@@ -29,7 +37,13 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health/**").permitAll()
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .anyRequest().authenticated())
-            .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()));
+            .exceptionHandling(e -> e
+                .authenticationEntryPoint(entryPoint)
+                .accessDeniedHandler(accessDeniedHandler))
+            .oauth2ResourceServer(oauth -> oauth
+                .jwt(Customizer.withDefaults())
+                .authenticationEntryPoint(entryPoint)
+                .accessDeniedHandler(accessDeniedHandler));
         return http.build();
     }
 
