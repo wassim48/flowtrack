@@ -5,7 +5,7 @@ spring:
   application:
     name: flowtrack-api
   datasource:
-    url: jdbc:postgresql://localhost:5432/flowtrack
+    url: jdbc:postgresql://localhost:15432/flowtrack
     username: flowtrack
     password: ${POSTGRES_PASSWORD:flowtrack}
   jpa:
