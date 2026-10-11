@@ -4,3 +4,6 @@ target/
 *.iml
 .env
 HELP.md
+
+# Keycloak raw realm export (may contain credentials)
+/infrastructure/keycloak/flowtrack-realm.json
