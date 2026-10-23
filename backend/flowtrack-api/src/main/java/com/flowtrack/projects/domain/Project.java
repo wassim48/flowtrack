@@ -29,6 +29,9 @@ public class Project {
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 
+    @Column(name = "next_issue_number", nullable = false)
+    private Long nextIssueNumber = 1L;
+
     protected Project() {
         // Required by JPA
     }
@@ -38,6 +41,16 @@ public class Project {
         this.name = name;
         this.description = description;
         this.createdBy = createdBy;
+    }
+
+    public Long getNextIssueNumber() {
+        return nextIssueNumber;
+    }
+
+    public Long allocateNextIssueNumber() {
+        Long allocatedNumber = nextIssueNumber;
+        nextIssueNumber++;
+        return allocatedNumber;
     }
 
     public Long getId() {
