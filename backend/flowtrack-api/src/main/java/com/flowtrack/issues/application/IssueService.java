@@ -4,6 +4,8 @@ package com.flowtrack.issues.application;
 import com.flowtrack.issues.api.dto.IssueResponse;
 import com.flowtrack.issues.domain.Issue;
 import com.flowtrack.issues.domain.IssueType;
+import com.flowtrack.issues.domain.IssuePriority;
+import com.flowtrack.issues.domain.IssueStatus;
 import com.flowtrack.issues.persistence.IssueRepository;
 import com.flowtrack.projects.domain.Project;
 import com.flowtrack.projects.domain.ProjectRole;
@@ -167,6 +169,50 @@ public class IssueService {
                         HttpStatus.NOT_FOUND,
                         "Issue not found"
                 ));
+    }
+
+    @Transactional
+    public IssueResponse updateIssue(
+            Long projectId,
+            Long issueNumber,
+            String title,
+            String description,
+            IssueType issueType,
+            IssuePriority priority,
+            IssueStatus status,
+            Jwt jwt
+    ) {
+        User user = userService.getOrCreateUser(jwt);
+
+        var membership = memberRepository
+                .findByProject_IdAndUser_Id(projectId, user.getId())
+                .orElseThrow(() -> new AccessDeniedException(
+                        "You are not a member of this project"
+                ));
+
+        if (membership.getRole() == ProjectRole.VIEWER) {
+            throw new AccessDeniedException("Viewers cannot update issues");
+        }
+
+        Issue issue = issueRepository
+                .findByProject_IdAndIssueNumber(projectId, issueNumber)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Issue not found"
+                ));
+
+        issue.updateDetails(title, description, issueType, priority);
+
+        try {
+            issue.transitionTo(status);
+        } catch (IllegalStateException ex) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    ex.getMessage()
+            );
+        }
+
+        return IssueResponse.from(issueRepository.save(issue));
     }
 
     private void requireProjectMembership(Long projectId, Jwt jwt) {

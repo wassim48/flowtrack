@@ -332,4 +332,82 @@ class IssueServiceIntegrationTest {
                 .getNextIssueNumber());
     }
 
+    @Test
+    void shouldUpdateIssueAndFollowAllowedWorkflow() {
+        Jwt jwt = createTestJwt();
+        var project = projectService.createProject("WF", "Workflow", null, jwt);
+        var created = issueService.createIssue(project.getId(), "Initial", null, IssueType.TASK, jwt);
+
+        var inProgress = issueService.updateIssue(
+                project.getId(), created.getIssueNumber(),
+                "Updated", "Working", IssueType.BUG, IssuePriority.HIGH,
+                IssueStatus.IN_PROGRESS, jwt
+        );
+
+        assertEquals("Updated", inProgress.title());
+        assertEquals(IssueType.BUG, inProgress.issueType());
+        assertEquals(IssuePriority.HIGH, inProgress.priority());
+        assertEquals(IssueStatus.IN_PROGRESS, inProgress.status());
+
+        var done = issueService.updateIssue(
+                project.getId(), created.getIssueNumber(),
+                "Updated", "Finished", IssueType.BUG, IssuePriority.HIGH,
+                IssueStatus.DONE, jwt
+        );
+
+        assertEquals(IssueStatus.DONE, done.status());
+    }
+
+    @Test
+    void shouldRejectTransitionFromDone() {
+        Jwt jwt = createTestJwt();
+        var project = projectService.createProject("TERM", "Terminal workflow", null, jwt);
+        var issue = issueService.createIssue(project.getId(), "Task", null, IssueType.TASK, jwt);
+
+        issueService.updateIssue(
+                project.getId(), issue.getIssueNumber(),
+                "Task", null, IssueType.TASK, IssuePriority.MEDIUM,
+                IssueStatus.IN_PROGRESS, jwt
+        );
+        issueService.updateIssue(
+                project.getId(), issue.getIssueNumber(),
+                "Task", null, IssueType.TASK, IssuePriority.MEDIUM,
+                IssueStatus.DONE, jwt
+        );
+
+        var ex = assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> issueService.updateIssue(
+                        project.getId(), issue.getIssueNumber(),
+                        "Task", null, IssueType.TASK, IssuePriority.MEDIUM,
+                        IssueStatus.IN_PROGRESS, jwt
+                )
+        );
+
+        assertEquals(409, ex.getStatusCode().value());
+    }
+
+    @Test
+    void shouldRejectIssueUpdateForViewer() {
+        Jwt jwt = createTestJwt();
+        var project = projectService.createProject("VWU", "Viewer update", null, jwt);
+        var issue = issueService.createIssue(project.getId(), "Task", null, IssueType.TASK, jwt);
+
+        var user = userRepository.findByKeycloakId(UUID.fromString(jwt.getSubject())).orElseThrow();
+        var membership = memberRepository
+                .findByProject_IdAndUser_Id(project.getId(), user.getId())
+                .orElseThrow();
+        membership.changeRole(ProjectRole.VIEWER);
+        memberRepository.saveAndFlush(membership);
+
+        assertThrows(
+                AccessDeniedException.class,
+                () -> issueService.updateIssue(
+                        project.getId(), issue.getIssueNumber(),
+                        "Changed", null, IssueType.TASK, IssuePriority.MEDIUM,
+                        IssueStatus.IN_PROGRESS, jwt
+                )
+        );
+    }
+
 }
