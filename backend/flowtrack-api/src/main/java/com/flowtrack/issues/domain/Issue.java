@@ -53,6 +53,10 @@ public class Issue {
     @Column(name = "updated_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime updatedAt;
 
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     protected Issue() {
         // Required by JPA
     }
@@ -121,5 +125,36 @@ public class Issue {
 
     public OffsetDateTime getUpdatedAt() {
         return updatedAt;
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+
+    public void updateDetails(String title, String description, IssueType issueType, IssuePriority priority) {
+        this.title = title;
+        this.description = description;
+        this.issueType = issueType;
+        this.priority = priority;
+    }
+
+    public void transitionTo(IssueStatus targetStatus) {
+        if (targetStatus == null || targetStatus == status) {
+            return;
+        }
+
+        boolean allowed = switch (status) {
+            case TODO -> targetStatus == IssueStatus.IN_PROGRESS;
+            case IN_PROGRESS -> targetStatus == IssueStatus.TODO || targetStatus == IssueStatus.DONE;
+            case DONE -> false;
+        };
+
+        if (!allowed) {
+            throw new IllegalStateException(
+                    "Invalid issue status transition: " + status + " -> " + targetStatus
+            );
+        }
+
+        this.status = targetStatus;
     }
 }
