@@ -3,6 +3,7 @@ package com.flowtrack.issues.api;
 
 import com.flowtrack.issues.api.dto.CreateIssueRequest;
 import com.flowtrack.issues.api.dto.IssueResponse;
+import com.flowtrack.issues.api.dto.UpdateIssueRequest;
 import com.flowtrack.issues.application.IssueService;
 
 import jakarta.validation.Valid;
@@ -60,6 +61,25 @@ public class IssueController {
                 projectId,
                 page,
                 size,
+                jwt
+        );
+    }
+
+    @PutMapping("/{issueNumber}")
+    public IssueResponse updateIssue(
+            @PathVariable Long projectId,
+            @PathVariable Long issueNumber,
+            @Valid @RequestBody UpdateIssueRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        return issueService.updateIssue(
+                projectId,
+                issueNumber,
+                request.title(),
+                request.description(),
+                request.issueType(),
+                request.priority(),
+                request.status(),
                 jwt
         );
     }
