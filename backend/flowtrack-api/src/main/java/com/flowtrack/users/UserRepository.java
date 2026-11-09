@@ -12,6 +12,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByKeycloakId(UUID keycloakId);
 
+    java.util.List<User> findByEmailIgnoreCaseAndActiveTrue(String email);
+
     @Modifying
     @Query(value = """
         INSERT INTO users (keycloak_id, email, display_name, active)

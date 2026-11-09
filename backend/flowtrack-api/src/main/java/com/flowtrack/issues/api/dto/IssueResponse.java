@@ -20,7 +20,8 @@ public record IssueResponse(
         Long reporterId,
         Long assigneeId,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt
+        OffsetDateTime updatedAt,
+        long version
 ) {
     public static IssueResponse from(Issue issue) {
         return new IssueResponse(
@@ -36,7 +37,8 @@ public record IssueResponse(
                 issue.getReporter().getId(),
                 issue.getAssignee() == null ? null : issue.getAssignee().getId(),
                 issue.getCreatedAt(),
-                issue.getUpdatedAt()
+                issue.getUpdatedAt(),
+                issue.getVersion()
         );
     }
 }

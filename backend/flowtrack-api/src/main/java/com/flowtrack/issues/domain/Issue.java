@@ -50,8 +50,37 @@ public class Issue {
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 
-    @Column(name = "updated_at", nullable = false, insertable = false, updatable = false)
+    @Column(name = "updated_at", nullable = false, insertable = false)
     private OffsetDateTime updatedAt;
+
+    @Version
+    private long version;
+
+    public long getVersion() {
+        return version;
+    }
+
+    public void edit(String title, String description, IssuePriority priority) {
+        if (title != null) this.title = title;
+        if (description != null) this.description = description;
+        if (priority != null) this.priority = priority;
+    }
+
+    public boolean moveTo(IssueStatus next) {
+        boolean allowed = switch (status) {
+            case TODO -> next == IssueStatus.IN_PROGRESS;
+            case IN_PROGRESS -> next == IssueStatus.REVIEW;
+            case REVIEW -> next == IssueStatus.DONE;
+            case DONE -> false;
+        };
+        if (allowed) status = next;
+        return allowed;
+    }
+
+    @PreUpdate
+    void touch() {
+        updatedAt = OffsetDateTime.now();
+    }
 
     protected Issue() {
         // Required by JPA
@@ -110,6 +139,8 @@ public class Issue {
     public User getReporter() {
         return reporter;
     }
+
+    public void assignTo(User user) { assignee = user; }
 
     public User getAssignee() {
         return assignee;

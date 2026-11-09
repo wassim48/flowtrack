@@ -127,6 +127,12 @@ public class GlobalExceptionHandler {
         return build(status, code, message, req, List.of());
     }
 
+    @ExceptionHandler(org.springframework.dao.OptimisticLockingFailureException.class)
+    ResponseEntity<ApiError> versionConflict(HttpServletRequest req) {
+        return build(HttpStatus.CONFLICT, "ISSUE_VERSION_CONFLICT",
+                "Issue changed. Reload it before retrying.", req, List.of());
+    }
+
     @ExceptionHandler(Exception.class)
     ResponseEntity<ApiError> unexpected(
             Exception ex,

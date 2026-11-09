@@ -3,6 +3,8 @@ package com.flowtrack.issues.api;
 
 import com.flowtrack.issues.api.dto.CreateIssueRequest;
 import com.flowtrack.issues.api.dto.IssueResponse;
+import com.flowtrack.issues.api.dto.EditIssueRequest;
+import com.flowtrack.issues.api.dto.MoveIssueRequest;
 import com.flowtrack.issues.application.IssueService;
 
 import jakarta.validation.Valid;
@@ -25,6 +27,18 @@ public class IssueController {
         this.issueService = issueService;
     }
 
+    @PatchMapping("/{issueNumber}")
+    public IssueResponse edit(@PathVariable Long projectId, @PathVariable Long issueNumber,
+                              @Valid @RequestBody EditIssueRequest request, @AuthenticationPrincipal Jwt jwt) {
+        return issueService.edit(projectId, issueNumber, request, jwt);
+    }
+
+    @PatchMapping("/{issueNumber}/status")
+    public IssueResponse move(@PathVariable Long projectId, @PathVariable Long issueNumber,
+                              @Valid @RequestBody MoveIssueRequest request, @AuthenticationPrincipal Jwt jwt) {
+        return issueService.move(projectId, issueNumber, request, jwt);
+    }
+
     @PostMapping
     public ResponseEntity<IssueResponse> createIssue(
             @PathVariable Long projectId,
@@ -36,6 +50,7 @@ public class IssueController {
                 request.title(),
                 request.description(),
                 request.issueType(),
+                request.priority(),
                 jwt
         );
 
