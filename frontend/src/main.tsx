@@ -5,6 +5,7 @@ import {columns, labels, transition, type Board, type Ticket} from './board'
 import {Comments} from './Comments'
 import {Inbox} from './Inbox'
 import {Activity} from './Activity'
+import {watchBoard} from './watchBoard'
 import './style.css'
 
 type Project = {id:number; name:string; projectKey:string}
@@ -40,6 +41,7 @@ function ProjectBoard({project}:{project:Project}) {
   const [busy,setBusy] = useState(false)
   const [feedback,setFeedback] = useState('')
   const [revision,reload] = useState(0)
+  useEffect(()=>watchBoard(project.id,()=>reload(n=>n+1)),[project.id])
   useEffect(() => {
     const controller = new AbortController()
     setError(''); setBusy(true)

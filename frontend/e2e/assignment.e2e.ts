@@ -57,7 +57,7 @@ test('Alice assigne un ticket à Bob, qui le déplace en cours',async ({browser,
     await bob.getByRole('button',{name:'Fermer',exact:true}).click()
     await bob.getByRole('button',{name:/Passer en « En cours/}).click()
     await expect(bob.locator('[data-status="IN_PROGRESS"] article')).toContainText('TEST-1')
-    await alice.getByRole('button',{name:/Actualiser/}).click()
+    // Alice leaves the board open while Bob moves the ticket.
     await expect(alice.locator('[data-status="IN_PROGRESS"] article')).toContainText('TEST-1')
   } finally {await session.close()}
 })
