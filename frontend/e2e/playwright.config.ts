@@ -8,7 +8,7 @@ export default defineConfig({
   webServer:[
     {command:process.platform==='win32'?'mvnw.cmd spring-boot:run':'bash mvnw spring-boot:run',
       cwd:resolve('../backend/flowtrack-api'),url:'http://127.0.0.1:18080/actuator/health',timeout:150000,
-      env:{FLOWTRACK_FRONTENDORIGIN:'http://localhost:15173',SERVER_PORT:'18080',SPRING_DATASOURCE_URL:'jdbc:postgresql://127.0.0.1:25432/flowtrack',POSTGRES_PASSWORD:password,
+      env:{KAFKA_BOOTSTRAP_SERVERS:'localhost:29092',FLOWTRACK_ACTIVITY_ENABLED:'true',FLOWTRACK_OUTBOX_ENABLED:'true',FLOWTRACK_NOTIFICATIONS_ENABLED:'false',FLOWTRACK_FRONTENDORIGIN:'http://localhost:15173',SERVER_PORT:'18080',SPRING_DATASOURCE_URL:'jdbc:postgresql://127.0.0.1:25432/flowtrack',POSTGRES_PASSWORD:password,
         SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI:'http://localhost:18081/realms/flowtrack'}},
     {command:'npm run dev:e2e',cwd:resolve('.'),url:'http://localhost:15173',
       env:{VITE_API_URL:'http://localhost:18080',VITE_KEYCLOAK_URL:'http://localhost:18081'}}

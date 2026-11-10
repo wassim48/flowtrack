@@ -27,6 +27,13 @@ public class IssueController {
         this.issueService = issueService;
     }
 
+    @DeleteMapping("/{issueNumber}")
+    public ResponseEntity<Void> delete(@PathVariable Long projectId, @PathVariable Long issueNumber,
+                                       @RequestParam long expectedVersion, @AuthenticationPrincipal Jwt jwt) {
+        issueService.delete(projectId, issueNumber, expectedVersion, jwt);
+        return ResponseEntity.noContent().build();
+    }
+
     @PatchMapping("/{issueNumber}")
     public IssueResponse edit(@PathVariable Long projectId, @PathVariable Long issueNumber,
                               @Valid @RequestBody EditIssueRequest request, @AuthenticationPrincipal Jwt jwt) {

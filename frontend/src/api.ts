@@ -16,5 +16,6 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   if (options.body) headers.set('Content-Type', 'application/json')
   const res = await fetch(origin + '/api' + path, {...options, headers})
   if (!res.ok) throw new ApiError(res.status, res.status === 403 ? 'Accès refusé pour ce projet.' : 'La requête a échoué (HTTP ' + res.status + ').')
+  if (res.status === 204) return undefined as T
   return res.json()
 }

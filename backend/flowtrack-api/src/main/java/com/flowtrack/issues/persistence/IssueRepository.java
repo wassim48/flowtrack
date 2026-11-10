@@ -11,6 +11,17 @@ import java.util.Optional;
 
 public interface IssueRepository extends JpaRepository<Issue, Long> {
 
+    interface StatusCount {
+        com.flowtrack.issues.domain.IssueStatus getStatus();
+        long getTotal();
+    }
+
+    @org.springframework.data.jpa.repository.Query("""
+            select i.status as status, count(i) as total from Issue i
+            where i.project.id = :projectId group by i.status
+            """)
+    List<StatusCount> countsByStatus(@org.springframework.data.repository.query.Param("projectId") Long projectId);
+
     List<Issue> findByProject_IdOrderByIssueNumberDesc(Long projectId);
 
     Page<Issue> findByProject_Id(Long projectId, Pageable pageable);

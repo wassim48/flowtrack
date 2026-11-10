@@ -17,9 +17,9 @@ Depuis `frontend`, avec Docker Desktop, Java 21 et Node.js disponibles :
 Pour utiliser Microsoft Edge déjà installé sous Windows, lancer
 `PLAYWRIGHT_CHANNEL=msedge npm run test:e2e` depuis Git Bash.
 
-Le scénario démarre deux conteneurs temporaires (PostgreSQL et Keycloak),
+Le scénario démarre trois conteneurs temporaires (PostgreSQL, Keycloak et Kafka),
 une API et un frontend de test. Garder libres les ports 15173, 18080,
-18081 et 25432. Les comptes et le mot de passe sont générés pour cet essai.
+18081, 25432 et 29092. Les comptes et le mot de passe sont générés pour cet essai.
 Alice crée un projet, ajoute Bob et lui assigne un ticket. Bob se connecte
 dans une session distincte, déplace ce ticket et Alice vérifie le nouveau
 statut après actualisation.

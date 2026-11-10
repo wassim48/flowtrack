@@ -19,6 +19,11 @@ public class BoardController {
         this.issueService = issueService;
     }
 
+    @GetMapping("/counters")
+    public Map<IssueStatus,Long> counters(@PathVariable Long projectId, @AuthenticationPrincipal Jwt jwt) {
+        return issueService.counters(projectId, jwt);
+    }
+
     @GetMapping
     public Map<IssueStatus, List<IssueResponse>> board(@PathVariable Long projectId,
                                                        @AuthenticationPrincipal Jwt jwt) {

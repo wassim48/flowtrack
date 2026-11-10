@@ -35,6 +35,9 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class IssueService {
 
+    private final com.flowtrack.events.IssueEvents events;
+    private final IssueCreationLimit creationLimit;
+    private final BoardCache boardCache;
     private final IssueRepository issueRepository;
     private final ProjectRepository projectRepository;
     private final ProjectMemberRepository memberRepository;
@@ -44,12 +47,18 @@ public class IssueService {
             IssueRepository issueRepository,
             ProjectRepository projectRepository,
             ProjectMemberRepository memberRepository,
-            UserService userService
+            UserService userService,
+            BoardCache boardCache,
+            IssueCreationLimit creationLimit,
+            com.flowtrack.events.IssueEvents events
     ) {
         this.issueRepository = issueRepository;
         this.projectRepository = projectRepository;
         this.memberRepository = memberRepository;
         this.userService = userService;
+        this.boardCache = boardCache;
+        this.creationLimit = creationLimit;
+        this.events = events;
     }
 
     @Transactional
@@ -87,6 +96,7 @@ public class IssueService {
             );
         }
 
+        creationLimit.check(reporter.getKeycloakId());
         Project project = projectRepository.findByIdForUpdate(projectId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
@@ -106,7 +116,10 @@ public class IssueService {
 
         issue.assignTo(resolveAssignee(projectId, assigneeId));
         issue.edit(null, null, priority);
-        return issueRepository.save(issue);
+        issueRepository.save(issue);
+        events.record("ISSUE_CREATED", issue, jwt, Map.of("title", title, "status", issue.getStatus()));
+        if (assigneeId != null) events.assigned(issue, jwt, null);
+        return issue;
     }
 
     @Transactional
@@ -130,7 +143,25 @@ public class IssueService {
 
     @Transactional
     public Map<IssueStatus, List<IssueResponse>> board(Long projectId, Jwt jwt) {
-        requireProjectMembership(projectId, jwt);
+        return boardCache.get(projectId, visibleRevision(projectId, jwt), () -> loadBoard(projectId));
+    }
+
+    @Transactional(readOnly = true)
+    public Map<IssueStatus,Long> counters(Long projectId, Jwt jwt) {
+        return boardCache.counts(projectId, visibleRevision(projectId, jwt), () -> {
+            var result = new EnumMap<IssueStatus,Long>(IssueStatus.class);
+            for (IssueStatus status : IssueStatus.values()) result.put(status, 0L);
+            for (var row : issueRepository.countsByStatus(projectId)) result.put(row.getStatus(), row.getTotal());
+            return result;
+        });
+    }
+
+    private java.util.UUID visibleRevision(Long projectId, Jwt jwt) {
+        return projectRepository.findVisibleBoardRevision(projectId, java.util.UUID.fromString(jwt.getSubject()))
+                .orElseThrow(() -> new AccessDeniedException("Project membership required"));
+    }
+
+    private Map<IssueStatus, List<IssueResponse>> loadBoard(Long projectId) {
         var columns = new EnumMap<IssueStatus, List<IssueResponse>>(IssueStatus.class);
         for (IssueStatus status : IssueStatus.values()) {
             columns.put(status, new ArrayList<>());
@@ -191,22 +222,43 @@ public class IssueService {
         if (request.title() == null && request.description() == null && request.priority() == null && request.assignment() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Provide a field to update");
         }
+        Long previousAssignee = issue.getAssignee() == null ? null : issue.getAssignee().getId();
         if (request.assignment() != null) {
             issue.assignTo(resolveAssignee(projectId, request.assignment().userId()));
         }
+        boolean fieldsChanged = (request.title() != null && !request.title().equals(issue.getTitle()))
+                || (request.description() != null && !request.description().equals(issue.getDescription()))
+                || (request.priority() != null && request.priority() != issue.getPriority());
         issue.edit(request.title(), request.description(), request.priority());
         issueRepository.flush();
+        if (fieldsChanged) events.record("ISSUE_UPDATED", issue, jwt, Map.of("title", issue.getTitle(), "priority", issue.getPriority()));
+        if (request.assignment() != null && !java.util.Objects.equals(previousAssignee, request.assignment().userId()))
+            events.assigned(issue, jwt, previousAssignee);
         return IssueResponse.from(issue);
     }
 
     @Transactional
     public IssueResponse move(Long projectId, Long number, MoveIssueRequest request, Jwt jwt) {
         Issue issue = editableIssue(projectId, number, request.expectedVersion(), jwt);
+        IssueStatus previousStatus = issue.getStatus();
         if (!issue.moveTo(request.newStatus())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid status transition");
         }
         issueRepository.flush();
+        events.record("ISSUE_STATUS_CHANGED", issue, jwt, Map.of("oldStatus", previousStatus, "newStatus", issue.getStatus()));
         return IssueResponse.from(issue);
+    }
+
+    @Transactional
+    public void delete(Long projectId, Long number, long expectedVersion, Jwt jwt) {
+        User user = userService.getOrCreateUser(jwt);
+        memberRepository.findByProject_IdAndUser_Id(projectId, user.getId())
+                .filter(member -> member.getRole() == ProjectRole.PROJECT_ADMIN)
+                .orElseThrow(() -> new AccessDeniedException("Project administrator required"));
+        Issue issue = findVersionedIssue(projectId, number, expectedVersion);
+        events.record("ISSUE_DELETED", issue, jwt, Map.of());
+        issueRepository.delete(issue);
+        issueRepository.flush();
     }
 
     private User resolveAssignee(Long projectId, Long userId) {
@@ -224,6 +276,10 @@ public class IssueService {
         if (membership.getRole() == ProjectRole.VIEWER) {
             throw new AccessDeniedException("Viewers cannot edit issues");
         }
+        return findVersionedIssue(projectId, number, expectedVersion);
+    }
+
+    private Issue findVersionedIssue(Long projectId, Long number, long expectedVersion) {
         Issue issue = issueRepository.findByProject_IdAndIssueNumber(projectId, number)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Issue not found"));
         if (issue.getVersion() != expectedVersion) {

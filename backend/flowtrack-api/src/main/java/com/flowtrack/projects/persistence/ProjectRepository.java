@@ -15,6 +15,14 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
 
     Optional<Project> findByProjectKey(String projectKey);
 
+    @Query(value = """
+            SELECT p.board_revision FROM projects p
+            JOIN project_members m ON m.project_id = p.id
+            JOIN users u ON u.id = m.user_id
+            WHERE p.id = :projectId AND u.keycloak_id = :subject
+            """, nativeQuery = true)
+    Optional<UUID> findVisibleBoardRevision(@Param("projectId") Long projectId, @Param("subject") UUID subject);
+
     boolean existsByProjectKey(String projectKey);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

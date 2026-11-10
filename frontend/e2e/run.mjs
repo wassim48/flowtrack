@@ -28,6 +28,15 @@ try {
     clientId:'flowtrack-frontend',publicClient:true,standardFlowEnabled:true,
     redirectUris:[origin+'/*'],webOrigins:[origin],attributes:{'pkce.code.challenge.method':'S256'}
   }]}))
+  const kafka=docker('create','-p','127.0.0.1:29092:29092',
+    '-e','KAFKA_NODE_ID=1','-e','KAFKA_PROCESS_ROLES=broker,controller',
+    '-e','KAFKA_LISTENERS=PLAINTEXT://:29092,CONTROLLER://:9093',
+    '-e','KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:29092',
+    '-e','KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT',
+    '-e','KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER','-e','KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093',
+    '-e','KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1','apache/kafka:3.9.1')
+  ids.push(kafka)
+  docker('start',kafka)
   const db=docker('create','-p','127.0.0.1:25432:5432','-e','POSTGRES_DB=flowtrack',
     '-e','POSTGRES_USER=flowtrack','-e','POSTGRES_PASSWORD='+secret,'postgres:16-alpine')
   ids.push(db)

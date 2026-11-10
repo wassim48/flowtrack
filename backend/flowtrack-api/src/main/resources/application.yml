@@ -2,8 +2,25 @@ server:
   port: 8080
 
 spring:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:19092}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.block.ms: 2000
+        request.timeout.ms: 3000
+        delivery.timeout.ms: 6000
   application:
     name: flowtrack-api
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:16379}
+      connect-timeout: 500ms
+      timeout: 500ms
+      repositories:
+        enabled: false
   datasource:
     url: jdbc:postgresql://localhost:15432/flowtrack
     username: flowtrack
@@ -21,6 +38,9 @@ spring:
           issuer-uri: http://localhost:8081/realms/flowtrack
 
 management:
+  health:
+    redis:
+      enabled: false # The board falls back to PostgreSQL when Redis is offline.
   endpoints:
     web:
       exposure:

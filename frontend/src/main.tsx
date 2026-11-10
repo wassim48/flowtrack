@@ -2,6 +2,9 @@ import {useEffect, useState, useRef} from 'react'
 import {createRoot} from 'react-dom/client'
 import {api, auth, ApiError} from './api'
 import {columns, labels, transition, type Board, type Ticket} from './board'
+import {Comments} from './Comments'
+import {Inbox} from './Inbox'
+import {Activity} from './Activity'
 import './style.css'
 
 type Project = {id:number; name:string; projectKey:string}
@@ -31,6 +34,7 @@ function ProjectBoard({project}:{project:Project}) {
   const [members,setMembers]=useState<Member[]>([])
   const writable=members.some(m=>m.currentUser && m.role!=='VIEWER')
   const [editing,setEditing] = useState<Ticket|null>(null)
+  const [history,setHistory]=useState<Ticket|null>(null)
   const [board,setBoard] = useState<Board|null>(null)
   const [error,setError] = useState('')
   const [busy,setBusy] = useState(false)
@@ -66,9 +70,19 @@ function ProjectBoard({project}:{project:Project}) {
     {board && <div className="board" aria-busy={busy}>{columns.map(status=><section key={status} data-status={status}><h2><i/>{labels[status]} <span>{board[status].length}</span></h2>
     {board[status].map(ticket=><article key={ticket.issueNumber}><small>{ticket.issueKey}</small><h3><button className="ticket-link" onClick={()=>setEditing(ticket)}>{ticket.title}</button></h3><p className="ticket-meta"><span>{types[ticket.issueType] || ticket.issueType}</span><span>Priorité {(priorities[ticket.priority] || ticket.priority).toLowerCase()}</span></p>
     <p>{members.find(m=>m.id===ticket.assigneeId)?.name || 'Non assigné'}</p>
+    <button aria-label={'Historique de '+ticket.issueKey} onClick={()=>setHistory(ticket)}>Historique</button>
     {writable && transition(ticket) && <button disabled={busy || !!error} onClick={()=>move(ticket)}>Passer en « {labels[transition(ticket)!.newStatus]} » →</button>}</article>)}
     {!board[status].length && <p className="empty">Aucun ticket</p>}</section>)}</div>}
-    {editing && <TicketEditor key={editing.issueNumber} ticket={editing} members={members} writable={writable} projectId={project.id} close={()=>setEditing(null)} saved={()=>{setFeedback(editing.issueKey+" mis à jour.");setEditing(null);reload(r=>r+1)}}/>}</main>
+    {history && <HistoryDialog projectId={project.id} ticket={history} close={()=>setHistory(null)}/>}
+    {editing && <TicketEditor key={editing.issueNumber} ticket={editing} members={members} writable={writable} projectId={project.id} close={()=>setEditing(null)} saved={result=>{setFeedback(editing.issueKey+" "+result);setEditing(null);reload(r=>r+1)}}/>}</main>
+}
+function HistoryDialog({projectId,ticket,close}:{projectId:number;ticket:Ticket;close:()=>void}) {
+  const ref=useRef<HTMLDialogElement>(null)
+  useEffect(()=>{const dialog=ref.current!;dialog.showModal();return ()=>dialog.close()},[])
+  return <dialog ref={ref} aria-label={'Historique de '+ticket.issueKey} onCancel={e=>{e.preventDefault();close()}}>
+    <div className="history-heading"><strong>{ticket.issueKey} · {ticket.title}</strong><button onClick={close}>Fermer</button></div>
+    <Activity projectId={projectId} number={ticket.issueNumber}/>
+  </dialog>
 }
 function TicketFields({ticket,members}:{ticket?:Ticket;members:Member[]}) {
   return <>
@@ -79,7 +93,7 @@ function TicketFields({ticket,members}:{ticket?:Ticket;members:Member[]}) {
     <label>Priorité<select name="priority" defaultValue={ticket?.priority || 'MEDIUM'}>{Object.entries(priorities).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
   </>
 }
-function TicketEditor({ticket,projectId,close,saved,members,writable}:{members:Member[];writable:boolean;ticket:Ticket;projectId:number;close:()=>void;saved:()=>void}) {
+function TicketEditor({ticket,projectId,close,saved,members,writable}:{members:Member[];writable:boolean;ticket:Ticket;projectId:number;close:()=>void;saved:(result:string)=>void}) {
   const [error,setError]=useState('')
   const [busy,setBusy]=useState(false)
   const ref=useRef<HTMLDialogElement>(null)
@@ -94,15 +108,26 @@ function TicketEditor({ticket,projectId,close,saved,members,writable}:{members:M
       setBusy(true);setError('')
       try {
         await api('/projects/'+projectId+'/issues/'+ticket.issueNumber,{method:'PATCH',body:JSON.stringify({title,description:data.get('description'),priority:data.get('priority'),assignment:{userId:Number(data.get('assignee'))||null},expectedVersion:ticket.version})})
-        saved()
+        saved('mis à jour.')
       } catch(e){setError(e instanceof ApiError && e.status===409 ? 'Le ticket a changé. Copiez vos modifications, fermez la fiche et actualisez le tableau.' : message(e))}
       finally{setBusy(false)}
     }}>
       <h2>{ticket.issueKey}</h2><p>{types[ticket.issueType]} · {labels[ticket.status]}</p>
       <fieldset disabled={!writable} style={{border:0,padding:0,display:'grid',gap:12}}><TicketFields ticket={ticket} members={members}/></fieldset>
       {error && <p role="alert">{error}</p>}
+      {members.some(m=>m.currentUser && m.role==='PROJECT_ADMIN') && <button type="button" disabled={busy} onClick={async ()=>{
+        if (!window.confirm('Supprimer définitivement le ticket '+ticket.issueKey+' ?')) return
+        setBusy(true);setError('')
+        try {
+          await api<void>('/projects/'+projectId+'/issues/'+ticket.issueNumber+'?expectedVersion='+ticket.version,{method:'DELETE'})
+          saved('supprimé.')
+        } catch(e) {setError(e instanceof ApiError && e.status===409 ? 'Ce ticket a changé. Fermez la fiche et actualisez avant de le supprimer.' : message(e))}
+        finally {setBusy(false)}
+      }}>Supprimer le ticket</button>}
       {writable && <button disabled={busy}>Enregistrer</button>}<button type="button" disabled={busy} onClick={close}>Fermer</button>
     </form>
+    <Comments projectId={projectId} number={ticket.issueNumber} writable={writable}/>
+    <Activity projectId={projectId} number={ticket.issueNumber}/>
   </dialog>
 }
 function FirstProject({onCreated}:{onCreated:(project:Project)=>void}) {
@@ -154,12 +179,13 @@ function Workspace(){
   const [projects,setProjects] = useState<Project[]|null>(null)
   const [id,select] = useState(0)
   const [error,setError] = useState('')
+  const [username,setUsername]=useState<string>(()=>auth.tokenParsed?.preferred_username || auth.tokenParsed?.email || '')
   const storageKey='flowtrack:project:'+auth.subject
   function chooseProject(id:number){select(id);sessionStorage.setItem(storageKey,String(id));setCreating(false)}
-  useEffect(()=>{api('/me').then(()=>api<Project[]>('/projects')).then(rows=>{setProjects(rows);select(rows.find(p=>p.id===Number(sessionStorage.getItem(storageKey)))?.id || rows[0]?.id || 0)}).catch(e=>setError(message(e)))},[])
+  useEffect(()=>{api<{username:string;email:string}>('/me').then(profile=>{setUsername(profile.username || profile.email);return api<Project[]>('/projects')}).then(rows=>{setProjects(rows);select(rows.find(p=>p.id===Number(sessionStorage.getItem(storageKey)))?.id || rows[0]?.id || 0)}).catch(e=>setError(message(e)))},[])
   function created(p:Project){setProjects(list=>[...(list || []),p]);chooseProject(p.id)}
   const project=projects?.find(p=>p.id===id)
-  return <><nav><strong>FlowTrack</strong>{projects?.length ? <label>Projet <select value={id} onChange={e=>{chooseProject(Number(e.target.value))}}>{projects.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></label> : null}{!!projects?.length && <button onClick={()=>setCreating(!creating)}>{creating ? "Retour au tableau" : "+ Nouveau projet"}</button>}<button onClick={()=>auth.logout({redirectUri:location.origin})}>Déconnexion</button></nav>
+  return <><nav><strong>FlowTrack</strong>{projects?.length ? <label>Projet <select value={id} onChange={e=>{chooseProject(Number(e.target.value))}}>{projects.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></label> : null}{!!projects?.length && <button onClick={()=>setCreating(!creating)}>{creating ? "Retour au tableau" : "+ Nouveau projet"}</button>}<span className="session-account">Compte connecté : <b>{username || 'Chargement…'}</b></span><Inbox/><button onClick={()=>auth.logout({redirectUri:location.origin})}>Déconnexion</button></nav>
   {creating ? <main><FirstProject onCreated={created}/></main> : project ? <ProjectBoard key={project.id} project={project}/> : <main><h1>Mes projets</h1><p role="status">{error || (projects ? 'Aucun projet associé à votre compte.' : 'Chargement des projets…')}</p>{projects?.length===0 && <FirstProject onCreated={created}/>}{error && <button onClick={()=>location.reload()}>Réessayer</button>}</main>}</>
 }
 const root=createRoot(document.getElementById('root')!)

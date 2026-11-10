@@ -19,6 +19,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -37,8 +38,44 @@ class IssueControllerIntegrationTest {
                     .withUsername("test")
                     .withPassword("test");
 
+    @Container
+    static org.testcontainers.containers.GenericContainer<?> redis =
+            new org.testcontainers.containers.GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
+
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate db;
+
+    @Test
+    void commentsAreProjectScopedAndRepeatedMentionsGenerateOneEvent() throws Exception {
+        String owner = UUID.randomUUID().toString(), viewer = UUID.randomUUID().toString();
+        long project = createProject(owner, "DISCUSS");
+        createIssue(owner, project, "Discussion");
+        String url = "/api/projects/" + project + "/issues/1/comments";
+        mockMvc.perform(get("/api/me").with(user(viewer))).andExpect(status().isOk());
+        mockMvc.perform(post("/api/projects/{id}/members",project).with(user(owner)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\""+viewer+"@test.local\",\"role\":\"VIEWER\"}")).andExpect(status().isCreated());
+        String text = "{\"body\":\"Bonjour @test-user, merci @test-user\"}";
+        mockMvc.perform(post(url).with(user(viewer)).contentType(MediaType.APPLICATION_JSON).content(text))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post(url).with(user(owner)).contentType(MediaType.APPLICATION_JSON).content(text))
+                .andExpect(status().isCreated());
+        mockMvc.perform(get(url).with(user(viewer))).andExpect(jsonPath("$",hasSize(1)));
+        mockMvc.perform(get(url).with(user(UUID.randomUUID().toString()))).andExpect(status().isForbidden());
+        var events = db.queryForList("""
+                SELECT envelope->>'eventType' FROM outbox_events WHERE project_id=?
+                AND topic='flowtrack.comment.events' ORDER BY seq
+                """,String.class,project);
+        org.junit.jupiter.api.Assertions.assertEquals(java.util.List.of("COMMENT_CREATED","COMMENT_MENTIONED"),events);
+    }
+
+    @Autowired
+    private io.micrometer.core.instrument.MeterRegistry metrics;
+
     @DynamicPropertySource
     static void configureDatabase(DynamicPropertyRegistry registry) {
+        registry.add("flowtrack.issue-creates-per-minute", () -> 6);
+        registry.add("spring.data.redis.host", redis::getHost);
+        registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
@@ -220,6 +257,56 @@ class IssueControllerIntegrationTest {
                 .andExpect(status().isOk());
         mockMvc.perform(get(ticket).with(user(bob))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.assigneeId").value((int) id));
+    }
+
+    @Test
+    void deletingRequiresAdministratorAndCurrentVersion() throws Exception {
+        String owner = UUID.randomUUID().toString();
+        long project = createProject(owner, "DELETE");
+        createIssue(owner, project, "To remove");
+        String url = "/api/projects/" + project + "/issues/1";
+        mockMvc.perform(delete(url).param("expectedVersion","0").with(user(UUID.randomUUID().toString())))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete(url).param("expectedVersion","1").with(user(owner)))
+                .andExpect(status().isConflict());
+        mockMvc.perform(get(url).with(user(owner))).andExpect(status().isOk());
+        mockMvc.perform(delete(url).param("expectedVersion","0").with(user(owner)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get(url).with(user(owner))).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void cachedBoardChecksAccessAndReflectsCommittedChanges() throws Exception {
+        String alice = UUID.randomUUID().toString();
+        long project = createProject(alice, "CACHE");
+        String board = "/api/projects/" + project + "/board";
+        String issue = "/api/projects/" + project + "/issues/1";
+        createIssue(alice, project, "Original");
+        mockMvc.perform(get(board + "/counters").with(user(alice))).andExpect(jsonPath("$.TODO").value(1));
+        var hits = metrics.counter("flowtrack.board.cache", "result", "hit");
+        double before = hits.count();
+        mockMvc.perform(get(board).with(user(alice))).andExpect(jsonPath("$.TODO[0].title").value("Original"));
+        mockMvc.perform(get(board).with(user(alice))).andExpect(jsonPath("$.TODO[0].title").value("Original"));
+        org.junit.jupiter.api.Assertions.assertEquals(before + 1, hits.count());
+        mockMvc.perform(get(board).with(user(UUID.randomUUID().toString()))).andExpect(status().isForbidden());
+        mockMvc.perform(patch(issue).with(user(alice)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"expectedVersion\":0,\"title\":\"Changed\"}")).andExpect(status().isOk());
+        mockMvc.perform(get(board).with(user(alice))).andExpect(jsonPath("$.TODO[0].title").value("Changed"));
+        mockMvc.perform(delete(issue).with(user(alice)).param("expectedVersion","1")).andExpect(status().isNoContent());
+        mockMvc.perform(get(board).with(user(alice))).andExpect(jsonPath("$.TODO", hasSize(0)));
+        mockMvc.perform(get(board + "/counters").with(user(alice))).andExpect(jsonPath("$.TODO").value(0));
+    }
+
+    @Test
+    void excessIssueCreationReturns429WithoutAddingATicket() throws Exception {
+        String owner = UUID.randomUUID().toString();
+        Long project = createProject(owner, "LIMIT");
+        for (int i = 0; i < 6; i++) createIssue(owner, project, "Accepted " + i);
+        mockMvc.perform(post("/api/projects/{id}/issues", project).with(user(owner))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"Limited\",\"issueType\":\"TASK\"}"))
+                .andExpect(status().isTooManyRequests());
+        mockMvc.perform(get("/api/projects/{id}/board/counters", project).with(user(owner)))
+                .andExpect(jsonPath("$.TODO").value(6));
     }
 
     @Test
