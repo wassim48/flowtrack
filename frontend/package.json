@@ -6,14 +6,17 @@
   "scripts": {
     "dev": "vite --host localhost --port 5173 --strictPort",
     "build": "tsc --noEmit && vite build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "node e2e/run.mjs",
+    "dev:e2e": "vite --config e2e/vite.config.ts"
   },
   "dependencies": {
+    "keycloak-js": "^26.2.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "keycloak-js": "^26.2.0"
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "typescript": "~5.9.3",

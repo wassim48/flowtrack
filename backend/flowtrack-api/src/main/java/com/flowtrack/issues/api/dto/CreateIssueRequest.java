@@ -16,6 +16,7 @@ public record CreateIssueRequest(
 
         @NotNull
         IssueType issueType,
-        IssuePriority priority
+        IssuePriority priority,
+        Long assigneeId
 ) {
 }

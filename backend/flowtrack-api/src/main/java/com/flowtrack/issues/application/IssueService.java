@@ -60,7 +60,7 @@ public class IssueService {
             IssueType issueType,
             Jwt jwt
     ) {
-        return createIssue(projectId, title, description, issueType, IssuePriority.MEDIUM, jwt);
+        return createIssue(projectId, title, description, issueType, IssuePriority.MEDIUM, null, jwt);
     }
 
     @Transactional
@@ -70,6 +70,7 @@ public class IssueService {
             String description,
             IssueType issueType,
             IssuePriority priority,
+            Long assigneeId,
             Jwt jwt
     ) {
         User reporter = userService.getOrCreateUser(jwt);
@@ -103,6 +104,7 @@ public class IssueService {
                 reporter
         );
 
+        issue.assignTo(resolveAssignee(projectId, assigneeId));
         issue.edit(null, null, priority);
         return issueRepository.save(issue);
     }
@@ -190,12 +192,7 @@ public class IssueService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Provide a field to update");
         }
         if (request.assignment() != null) {
-            Long userId = request.assignment().userId();
-            User assignee = userId == null ? null : memberRepository.findByProject_IdAndUser_Id(projectId, userId)
-                    .filter(member -> member.getRole() != ProjectRole.VIEWER)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid assignee"))
-                    .getUser();
-            issue.assignTo(assignee);
+            issue.assignTo(resolveAssignee(projectId, request.assignment().userId()));
         }
         issue.edit(request.title(), request.description(), request.priority());
         issueRepository.flush();
@@ -210,6 +207,14 @@ public class IssueService {
         }
         issueRepository.flush();
         return IssueResponse.from(issue);
+    }
+
+    private User resolveAssignee(Long projectId, Long userId) {
+        if (userId == null) return null;
+        return memberRepository.findByProject_IdAndUser_Id(projectId, userId)
+                .filter(member -> member.getRole() != ProjectRole.VIEWER)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid assignee"))
+                .getUser();
     }
 
     private Issue editableIssue(Long projectId, Long number, long expectedVersion, Jwt jwt) {

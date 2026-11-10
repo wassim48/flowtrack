@@ -10,7 +10,7 @@ const priorities:Record<string,string> = {LOW:'Basse',MEDIUM:'Normale',HIGH:'Hau
 const types:Record<string,string> = {TASK:'Tâche',BUG:'Anomalie',STORY:'Récit utilisateur'}
 type Member = {id:number; name:string; role:string; currentUser:boolean}
 const roles:Record<string,string> = {MEMBER:'Membre',VIEWER:'Lecture seule',PROJECT_ADMIN:'Administrateur'}
-function Team({projectId,members,added}:{projectId:number;members:Member[];added:(member:Member)=>void}) {
+function Team({projectId,projectKey,members,added}:{projectId:number;projectKey:string;members:Member[];added:(member:Member)=>void}) {
   const [error,setError]=useState('')
   const [busy,setBusy]=useState(false)
   return <details><summary>Membres ({members.length})</summary><ul>{members.map(m=><li key={m.id}>{m.name} · {roles[m.role]}</li>)}</ul>
@@ -25,7 +25,7 @@ function Team({projectId,members,added}:{projectId:number;members:Member[];added
       } catch(e){setError(e instanceof ApiError && e.status===404?'Compte introuvable. Cette personne doit d’abord se connecter à FlowTrack.':e instanceof ApiError && e.status===409?'Cette personne fait déjà partie du projet.':message(e))}
       finally{setBusy(false)}
     }}><label>Adresse e-mail<input type="email" name="email" required/></label><label>Rôle<select name="role">{Object.entries(roles).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
-    {error && <p role="alert">{error}</p>}<button disabled={busy}>Ajouter au projet</button></form>}</details>
+    {error && <p role="alert">{error}</p>}<button disabled={busy}>Ajouter à {projectKey}</button></form>}</details>
 }
 function ProjectBoard({project}:{project:Project}) {
   const [members,setMembers]=useState<Member[]>([])
@@ -61,8 +61,8 @@ function ProjectBoard({project}:{project:Project}) {
     {error && <p className="notice" role="alert">{error}</p>}
     {!board && !error && <p role="status">Chargement du tableau…</p>}
     <p className="feedback" role="status">{feedback}</p>
-    {board && <Team projectId={project.id} members={members} added={m=>setMembers(list=>[...list,m])}/>}
-    {board && writable && <NewTicket projectId={project.id} onCreated={key=>{setFeedback(key+' ajouté dans « À faire ».');reload(r=>r+1)}}/>}
+    {board && <Team projectKey={project.projectKey} projectId={project.id} members={members} added={m=>setMembers(list=>[...list,m])}/>}
+    {board && writable && <NewTicket members={members} projectId={project.id} onCreated={key=>{setFeedback(key+' ajouté dans « À faire ».');reload(r=>r+1)}}/>}
     {board && <div className="board" aria-busy={busy}>{columns.map(status=><section key={status} data-status={status}><h2><i/>{labels[status]} <span>{board[status].length}</span></h2>
     {board[status].map(ticket=><article key={ticket.issueNumber}><small>{ticket.issueKey}</small><h3><button className="ticket-link" onClick={()=>setEditing(ticket)}>{ticket.title}</button></h3><p className="ticket-meta"><span>{types[ticket.issueType] || ticket.issueType}</span><span>Priorité {(priorities[ticket.priority] || ticket.priority).toLowerCase()}</span></p>
     <p>{members.find(m=>m.id===ticket.assigneeId)?.name || 'Non assigné'}</p>
@@ -70,11 +70,12 @@ function ProjectBoard({project}:{project:Project}) {
     {!board[status].length && <p className="empty">Aucun ticket</p>}</section>)}</div>}
     {editing && <TicketEditor key={editing.issueNumber} ticket={editing} members={members} writable={writable} projectId={project.id} close={()=>setEditing(null)} saved={()=>{setFeedback(editing.issueKey+" mis à jour.");setEditing(null);reload(r=>r+1)}}/>}</main>
 }
-function TicketFields({ticket}:{ticket?:Ticket}) {
+function TicketFields({ticket,members}:{ticket?:Ticket;members:Member[]}) {
   return <>
     <label>Titre<input name="title" defaultValue={ticket?.title} required maxLength={255}/></label>
     <label>Description<textarea name="description" rows={5} defaultValue={ticket?.description || ''}/></label>
     {!ticket && <label>Type<select name="issueType" defaultValue="TASK">{Object.entries(types).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>}
+    <label>Responsable<select name="assignee" defaultValue={ticket?.assigneeId || ''}><option value="">Non assigné</option>{members.filter(m=>m.role!=='VIEWER').map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
     <label>Priorité<select name="priority" defaultValue={ticket?.priority || 'MEDIUM'}>{Object.entries(priorities).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
   </>
 }
@@ -98,7 +99,7 @@ function TicketEditor({ticket,projectId,close,saved,members,writable}:{members:M
       finally{setBusy(false)}
     }}>
       <h2>{ticket.issueKey}</h2><p>{types[ticket.issueType]} · {labels[ticket.status]}</p>
-      <fieldset disabled={!writable} style={{border:0,padding:0,display:'grid',gap:12}}><TicketFields ticket={ticket}/><label>Responsable<select name="assignee" defaultValue={ticket.assigneeId || ''}><option value="">Non assigné</option>{members.filter(m=>m.role!=='VIEWER').map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label></fieldset>
+      <fieldset disabled={!writable} style={{border:0,padding:0,display:'grid',gap:12}}><TicketFields ticket={ticket} members={members}/></fieldset>
       {error && <p role="alert">{error}</p>}
       {writable && <button disabled={busy}>Enregistrer</button>}<button type="button" disabled={busy} onClick={close}>Fermer</button>
     </form>
@@ -130,7 +131,7 @@ function FirstProject({onCreated}:{onCreated:(project:Project)=>void}) {
     <button disabled={busy}>{busy ? 'Création…' : 'Créer le projet'}</button>
   </form>
 }
-function NewTicket({projectId,onCreated}:{projectId:number;onCreated:(key:string)=>void}) {
+function NewTicket({projectId,onCreated,members}:{members:Member[];projectId:number;onCreated:(key:string)=>void}) {
   const [error,setError] = useState('')
   const [busy,setBusy] = useState(false)
   return <details><summary>+ Ajouter un ticket</summary><form className="create" onSubmit={async event=>{
@@ -142,10 +143,10 @@ function NewTicket({projectId,onCreated}:{projectId:number;onCreated:(key:string
     if (!title) {setError('Saisissez un titre.');return}
     setBusy(true);setError('')
     try {
-      const created = await api<Ticket>('/projects/'+projectId+'/issues',{method:'POST',body:JSON.stringify({title,issueType:data.get('issueType'),description:data.get('description'),priority:data.get('priority')})})
+      const created = await api<Ticket>('/projects/'+projectId+'/issues',{method:'POST',body:JSON.stringify({title,assigneeId:Number(data.get('assignee')) || null,issueType:data.get('issueType'),description:data.get('description'),priority:data.get('priority')})})
       form.reset();const panel = form.closest('details'); if (panel) {panel.open=false;panel.querySelector('summary')?.focus()} onCreated(created.issueKey)
     } catch(e) {setError(message(e))} finally {setBusy(false)}
-  }}><TicketFields/>
+  }}><TicketFields members={members}/>
   {error && <p role="alert">{error}</p>}<button disabled={busy}>{busy ? 'Création…' : 'Créer le ticket'}</button></form></details>
 }
 function Workspace(){
@@ -153,10 +154,12 @@ function Workspace(){
   const [projects,setProjects] = useState<Project[]|null>(null)
   const [id,select] = useState(0)
   const [error,setError] = useState('')
-  useEffect(()=>{api('/me').then(()=>api<Project[]>('/projects')).then(rows=>{setProjects(rows);select(rows[0]?.id || 0)}).catch(e=>setError(message(e)))},[])
-  function created(p:Project){setProjects(list=>[...(list || []),p]);select(p.id);setCreating(false)}
+  const storageKey='flowtrack:project:'+auth.subject
+  function chooseProject(id:number){select(id);sessionStorage.setItem(storageKey,String(id));setCreating(false)}
+  useEffect(()=>{api('/me').then(()=>api<Project[]>('/projects')).then(rows=>{setProjects(rows);select(rows.find(p=>p.id===Number(sessionStorage.getItem(storageKey)))?.id || rows[0]?.id || 0)}).catch(e=>setError(message(e)))},[])
+  function created(p:Project){setProjects(list=>[...(list || []),p]);chooseProject(p.id)}
   const project=projects?.find(p=>p.id===id)
-  return <><nav><strong>FlowTrack</strong>{projects?.length ? <label>Projet <select value={id} onChange={e=>{select(Number(e.target.value));setCreating(false)}}>{projects.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></label> : null}{!!projects?.length && <button onClick={()=>setCreating(!creating)}>{creating ? "Retour au tableau" : "+ Nouveau projet"}</button>}<button onClick={()=>auth.logout({redirectUri:location.origin})}>Déconnexion</button></nav>
+  return <><nav><strong>FlowTrack</strong>{projects?.length ? <label>Projet <select value={id} onChange={e=>{chooseProject(Number(e.target.value))}}>{projects.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></label> : null}{!!projects?.length && <button onClick={()=>setCreating(!creating)}>{creating ? "Retour au tableau" : "+ Nouveau projet"}</button>}<button onClick={()=>auth.logout({redirectUri:location.origin})}>Déconnexion</button></nav>
   {creating ? <main><FirstProject onCreated={created}/></main> : project ? <ProjectBoard key={project.id} project={project}/> : <main><h1>Mes projets</h1><p role="status">{error || (projects ? 'Aucun projet associé à votre compte.' : 'Chargement des projets…')}</p>{projects?.length===0 && <FirstProject onCreated={created}/>}{error && <button onClick={()=>location.reload()}>Réessayer</button>}</main>}</>
 }
 const root=createRoot(document.getElementById('root')!)

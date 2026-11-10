@@ -51,6 +51,7 @@ public class IssueController {
                 request.description(),
                 request.issueType(),
                 request.priority(),
+                request.assigneeId(),
                 jwt
         );
 

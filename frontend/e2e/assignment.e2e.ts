@@ -1,0 +1,46 @@
+import {test,expect,type Page} from '@playwright/test'
+
+async function login(page:Page, username:string) {
+  await page.goto('/')
+  await page.locator('#username').fill(username)
+  await page.locator('#password').fill(process.env.FLOWTRACK_E2E_PASSWORD!)
+  await page.locator('#kc-login').click()
+  await expect(page.getByRole('button',{name:'Déconnexion'})).toBeVisible()
+  await expect(page.getByRole('button',{name:'Créer le projet'})).toBeVisible()
+}
+
+test('Alice assigne un ticket à Bob, qui le déplace en cours',async ({browser,page:alice,baseURL})=>{
+  const session=await browser.newContext({baseURL})
+  try {
+    const bob=await session.newPage()
+    await login(bob,'bob')
+    await login(alice,'alice')
+    await alice.getByLabel('Nom du projet').fill('Collaboration')
+    await alice.getByLabel('Clé du projet').fill('TEST')
+    await alice.getByRole('button',{name:'Créer le projet'}).click()
+    await alice.getByRole('button',{name:'+ Nouveau projet'}).click()
+    await alice.getByLabel('Nom du projet').fill('Autre projet')
+    await alice.getByLabel('Clé du projet').fill('OTHER')
+    await alice.getByRole('button',{name:'Créer le projet'}).click()
+    await expect(alice.getByRole('heading',{name:'Autre projet'})).toBeVisible()
+    await alice.getByRole('combobox',{name:'Projet',exact:true}).selectOption({label:'Collaboration'})
+    await alice.reload()
+    await expect(alice.getByRole('heading',{name:'Collaboration'})).toBeVisible()
+    await alice.locator('summary').filter({hasText:'Membres'}).click()
+    await alice.getByLabel('Adresse e-mail').fill('bob@example.test')
+    await alice.getByRole('button',{name:'Ajouter à TEST'}).click()
+    await expect(alice.getByRole('listitem').filter({hasText:'bob'})).toBeVisible()
+    await alice.locator('summary').filter({hasText:'Ajouter un ticket'}).click()
+    await alice.getByLabel('Titre',{exact:true}).fill('Vérifier la connexion')
+    await alice.getByLabel('Responsable').selectOption({label:'bob'})
+    await alice.getByRole('button',{name:'Créer le ticket'}).click()
+    await expect(alice.locator('article')).toContainText('bob')
+    await bob.reload()
+    await expect(bob.locator('article')).toContainText('bob')
+    await expect(bob.getByRole('combobox',{name:'Projet',exact:true}).locator('option')).toHaveText(['Collaboration'])
+    await bob.getByRole('button',{name:/Passer en « En cours/}).click()
+    await expect(bob.locator('[data-status="IN_PROGRESS"] article')).toContainText('TEST-1')
+    await alice.getByRole('button',{name:/Actualiser/}).click()
+    await expect(alice.locator('[data-status="IN_PROGRESS"] article')).toContainText('TEST-1')
+  } finally {await session.close()}
+})
